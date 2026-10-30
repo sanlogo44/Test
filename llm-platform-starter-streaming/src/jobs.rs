@@ -330,9 +330,10 @@ pub async fn execute_next(
             );
         }
     }
-    get(pool, &job.id)
+    let processed = get(pool, &job.id)
         .await?
-        .context("processed job disappeared")
+        .context("processed job disappeared")?;
+    Ok(Some(processed))
 }
 
 #[cfg(test)]
