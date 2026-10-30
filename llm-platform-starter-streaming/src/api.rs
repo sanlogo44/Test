@@ -261,13 +261,13 @@ async fn pump_provider_sse(
             Ok(None) => {
                 if !buffer.is_empty() {
                     if let Some(data) = parse_sse_line(&buffer) {
-                        if data == "[DONE]" {
-                            finished = true;
-                        } else if let Some(payload) =
-                            translate_provider_chunk(&data, &request_id, &model, created)
-                        {
-                            if !send_sse_data(&sender, &cancellation, payload).await {
-                                break;
+                        if data != "[DONE]" {
+                            if let Some(payload) =
+                                translate_provider_chunk(&data, &request_id, &model, created)
+                            {
+                                if !send_sse_data(&sender, &cancellation, payload).await {
+                                    break;
+                                }
                             }
                         }
                     }
