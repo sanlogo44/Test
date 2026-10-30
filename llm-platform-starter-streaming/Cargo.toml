@@ -1,0 +1,30 @@
+[package]
+name = "llm-platform"
+version = "0.1.0"
+edition = "2021"
+description = "Local-first LLM orchestration platform with a Rust core"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+async-stream = "0.3"
+tokio-util = { version = "0.7", features = ["rt"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "migrate", "macros", "uuid", "chrono", "json"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+
+[[bin]]
+name = "llm-platform"
+path = "src/main.rs"
