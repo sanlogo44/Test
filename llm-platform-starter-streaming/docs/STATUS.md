@@ -69,6 +69,8 @@ The execution environment used to create this starter does not currently have `r
 - [x] Worker failures are logged, retried within the configured attempt limit, and dead-lettered when exhausted.
 - [x] Added tests for queue listing, cancellation and failure of unsupported job types.
 - [ ] Rust formatting, Clippy, Rust unit tests, and schema tests must pass in CI before this slice is verified.
-- [ ] Retry backoff and lease renewal remain required before long-running or expensive production use.
+- [x] Added bounded exponential retry backoff (2–256 seconds, capped at 300 seconds) for retriable worker failures.
+- [x] The worker rejects leases of 180 seconds or less because the current provider adapter can run for up to 180 seconds.
+- [ ] Lease renewal remains required before introducing handlers that can legitimately exceed their configured lease.
 
 The worker accepts a JSON payload with a model string and messages array. The result is persisted as JSON in result_reference. Provider request timeout is 180 seconds; default worker lease is 240 seconds.
