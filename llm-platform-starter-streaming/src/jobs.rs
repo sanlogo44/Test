@@ -191,11 +191,14 @@ pub async fn fail(pool: &SqlitePool, job_id: &str, worker_id: &str, error_code: 
     let attempt_count: i64 = row.try_get("attempt_count")?;
     let maximum_attempts: i64 = row.try_get("maximum_attempts")?;
     let status = if attempt_count >= maximum_attempts { "dead_letter" } else { "queued" };
+    // Exponential retry delay: 2, 4, 8, ... up to five minutes.
+    let retry_delay_seconds = 2_i64.pow(attempt_count.min(8) as u32).min(300);
     sqlx::query(
         "UPDATE jobs SET status = ?, error_code = ?, lease_owner = NULL, lease_expires_at = NULL, \
          completed_at = CASE WHEN ? = 'dead_letter' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE NULL END, \
+         scheduled_at = CASE WHEN ? = 'queued' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now', '+' || ? || ' seconds') ELSE scheduled_at END, \
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?",
-    ).bind(status).bind(error_code).bind(status).bind(job_id).execute(&mut *tx).await?;
+    ).bind(status).bind(error_code).bind(status).bind(status).bind(retry_delay_seconds).bind(job_id).execute(&mut *tx).await?;
     sqlx::query(
         "UPDATE job_attempts SET status = 'failed', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), error_summary = ? WHERE job_id = ? AND status = 'running'",
     ).bind(error_summary).bind(job_id).execute(&mut *tx).await?;
@@ -224,6 +227,8 @@ pub async fn recover_expired_leases(pool: &SqlitePool) -> Result<u64> {
 
 /// Execute a single job. chat_completion invokes the registered inference adapter.
 pub async fn execute_next(pool: &SqlitePool, worker_id: &str, lease_seconds: i64) -> Result<Option<Job>> {
+    // The OpenAI-compatible adapter has a 180-second request timeout.
+    anyhow::ensure!(lease_seconds > 180, "worker lease must be longer than the 180-second provider timeout");
     let Some(job) = claim(pool, worker_id, lease_seconds).await? else { return Ok(None); };
     let execution: Result<String> = async {
         match job.job_type.as_str() {
@@ -300,7 +305,7 @@ mod tests {
     async fn unsupported_job_type_becomes_dead_letter() {
         let pool=pool().await;
         let job=enqueue(&pool,"unknown",&serde_json::json!({}),0,1,None).await.unwrap();
-        let result=execute_next(&pool,"worker-a",60).await.unwrap().unwrap();
+        let result=execute_next(&pool,"worker-a",240).await.unwrap().unwrap();
         assert_eq!(result.id,job.id);
         assert_eq!(result.status,"dead_letter");
         assert_eq!(result.error_code.as_deref(),Some("job_execution_failed"));
