@@ -59,7 +59,10 @@ pub enum Commands {
         command: ModelCommands,
     },
     /// Inspect and run persistent background jobs.
-    Jobs { #[command(subcommand)] command: JobCommands },
+    Jobs {
+        #[command(subcommand)]
+        command: JobCommands,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -103,17 +106,26 @@ pub enum ModelCommands {
     List,
 }
 
-
 #[derive(Debug, Subcommand)]
 pub enum JobCommands {
     /// Enqueue a JSON job payload.
-    Enqueue { job_type: String, payload: String,
-        #[arg(long, default_value_t = 0)] priority: i64,
-        #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(i64).range(1..))] maximum_attempts: i64,
-        #[arg(long)] idempotency_key: Option<String> },
+    Enqueue {
+        job_type: String,
+        payload: String,
+        #[arg(long, default_value_t = 0)]
+        priority: i64,
+        #[arg(long, default_value_t = 3, value_parser = clap::value_parser!(i64).range(1..))]
+        maximum_attempts: i64,
+        #[arg(long)]
+        idempotency_key: Option<String>,
+    },
     /// List jobs, optionally filtered by status.
-    List { #[arg(long)] status: Option<String>,
-        #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(i64).range(1..=500))] limit: i64 },
+    List {
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(i64).range(1..=500))]
+        limit: i64,
+    },
     /// Inspect a job by ID.
     Inspect { id: String },
     /// Cancel a queued job.
@@ -121,10 +133,16 @@ pub enum JobCommands {
     /// Recover expired worker leases.
     Recover,
     /// Run a worker; --once processes at most one job.
-    Worker { #[arg(long)] worker_id: Option<String>,
-        #[arg(long, default_value_t = 240, value_parser = clap::value_parser!(i64).range(1..))] lease_seconds: i64,
-        #[arg(long, default_value_t = 1000, value_parser = clap::value_parser!(u64).range(100..))] poll_interval_ms: u64,
-        #[arg(long)] once: bool },
+    Worker {
+        #[arg(long)]
+        worker_id: Option<String>,
+        #[arg(long, default_value_t = 240, value_parser = clap::value_parser!(i64).range(1..))]
+        lease_seconds: i64,
+        #[arg(long, default_value_t = 1000, value_parser = clap::value_parser!(u64).range(100..))]
+        poll_interval_ms: u64,
+        #[arg(long)]
+        once: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

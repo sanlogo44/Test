@@ -45,11 +45,10 @@ pub async fn status(pool: &SqlitePool) -> Result<()> {
         return Ok(());
     }
 
-    let rows = sqlx::query(
-        "SELECT version, description, success FROM _sqlx_migrations ORDER BY version",
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT version, description, success FROM _sqlx_migrations ORDER BY version")
+            .fetch_all(pool)
+            .await?;
 
     if rows.is_empty() {
         println!("No migrations have been applied. Run: llm-platform db migrate");
@@ -79,10 +78,9 @@ pub async fn require_migrated(pool: &SqlitePool) -> Result<()> {
         bail!("database is not initialized; run `llm-platform db migrate` first");
     }
 
-    let failed: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations WHERE success = 0")
-            .fetch_one(pool)
-            .await?;
+    let failed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations WHERE success = 0")
+        .fetch_one(pool)
+        .await?;
     if failed > 0 {
         bail!("database has a failed migration; inspect the database before continuing");
     }
@@ -92,8 +90,7 @@ pub async fn require_migrated(pool: &SqlitePool) -> Result<()> {
     )
     .fetch_all(pool)
     .await?;
-    let expected_versions: Vec<i64> =
-        MIGRATOR.iter().map(|migration| migration.version).collect();
+    let expected_versions: Vec<i64> = MIGRATOR.iter().map(|migration| migration.version).collect();
     if applied_versions != expected_versions {
         bail!(
             "database migration versions do not match this application; run `llm-platform db migrate` and inspect any migration errors"

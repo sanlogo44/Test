@@ -90,8 +90,8 @@ pub async fn register_model(
             .bind(provider_name.trim())
             .fetch_optional(pool)
             .await?;
-    let provider_id = provider_id
-        .with_context(|| format!("enabled provider `{provider_name}` was not found"))?;
+    let provider_id =
+        provider_id.with_context(|| format!("enabled provider `{provider_name}` was not found"))?;
 
     let normalized_path = local_path.map(str::trim).filter(|value| !value.is_empty());
     let id = Uuid::new_v4().to_string();
@@ -145,7 +145,8 @@ fn validate_endpoint(endpoint: Option<&str>) -> Result<Option<String>> {
     let Some(endpoint) = endpoint.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
-    let parsed = Url::parse(endpoint).context("provider endpoint must be an absolute HTTP(S) URL")?;
+    let parsed =
+        Url::parse(endpoint).context("provider endpoint must be an absolute HTTP(S) URL")?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
         bail!("provider endpoint scheme must be http or https");
     }
@@ -174,14 +175,9 @@ mod tests {
             .expect("in-memory database should open");
         db::migrate(&pool).await.expect("migration should apply");
 
-        add_provider(
-            &pool,
-            "local",
-            "local",
-            Some("http://127.0.0.1:8080/v1"),
-        )
-        .await
-        .expect("provider should register");
+        add_provider(&pool, "local", "local", Some("http://127.0.0.1:8080/v1"))
+            .await
+            .expect("provider should register");
         register_model(
             &pool,
             "local",

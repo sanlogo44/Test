@@ -62,7 +62,9 @@ pub async fn enqueue(
             .await
             .context("idempotency key conflicted but existing job was not found")?
     };
-    get(pool, &selected_id).await?.context("enqueued job not found")
+    get(pool, &selected_id)
+        .await?
+        .context("enqueued job not found")
 }
 
 pub async fn get(pool: &SqlitePool, id: &str) -> Result<Option<Job>> {
@@ -95,23 +97,45 @@ pub async fn get(pool: &SqlitePool, id: &str) -> Result<Option<Job>> {
 
 /// List jobs with bounded limits and an optional validated status filter.
 pub async fn list(pool: &SqlitePool, status: Option<&str>, limit: i64) -> Result<Vec<Job>> {
-    anyhow::ensure!((1..=500).contains(&limit), "limit must be between 1 and 500");
+    anyhow::ensure!(
+        (1..=500).contains(&limit),
+        "limit must be between 1 and 500"
+    );
     if let Some(status) = status {
-        anyhow::ensure!(["queued", "running", "completed", "failed", "cancelled", "dead_letter"].contains(&status), "unsupported job status filter");
+        anyhow::ensure!(
+            [
+                "queued",
+                "running",
+                "completed",
+                "failed",
+                "cancelled",
+                "dead_letter"
+            ]
+            .contains(&status),
+            "unsupported job status filter"
+        );
     }
     let rows = sqlx::query("SELECT id,job_type,payload_json,status,priority,attempt_count,maximum_attempts,scheduled_at,lease_owner,lease_expires_at,result_reference,error_code FROM jobs WHERE (? IS NULL OR status=?) ORDER BY priority DESC,scheduled_at ASC,created_at ASC LIMIT ?")
         .bind(status).bind(status).bind(limit).fetch_all(pool).await?;
-    rows.into_iter().map(|row| -> Result<Job> {
-        let payload: String = row.try_get("payload_json")?;
-        Ok(Job {
-            id: row.try_get("id")?, job_type: row.try_get("job_type")?,
-            payload: serde_json::from_str(&payload)?, status: row.try_get("status")?,
-            priority: row.try_get("priority")?, attempt_count: row.try_get("attempt_count")?,
-            maximum_attempts: row.try_get("maximum_attempts")?, scheduled_at: row.try_get("scheduled_at")?,
-            lease_owner: row.try_get("lease_owner")?, lease_expires_at: row.try_get("lease_expires_at")?,
-            result_reference: row.try_get("result_reference")?, error_code: row.try_get("error_code")?,
+    rows.into_iter()
+        .map(|row| -> Result<Job> {
+            let payload: String = row.try_get("payload_json")?;
+            Ok(Job {
+                id: row.try_get("id")?,
+                job_type: row.try_get("job_type")?,
+                payload: serde_json::from_str(&payload)?,
+                status: row.try_get("status")?,
+                priority: row.try_get("priority")?,
+                attempt_count: row.try_get("attempt_count")?,
+                maximum_attempts: row.try_get("maximum_attempts")?,
+                scheduled_at: row.try_get("scheduled_at")?,
+                lease_owner: row.try_get("lease_owner")?,
+                lease_expires_at: row.try_get("lease_expires_at")?,
+                result_reference: row.try_get("result_reference")?,
+                error_code: row.try_get("error_code")?,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 /// Cancel work only while it is queued. Running jobs remain owned by their worker.
@@ -161,7 +185,12 @@ pub async fn claim(pool: &SqlitePool, worker_id: &str, lease_seconds: i64) -> Re
     }
 }
 
-pub async fn complete(pool: &SqlitePool, job_id: &str, worker_id: &str, result_reference: Option<&str>) -> Result<bool> {
+pub async fn complete(
+    pool: &SqlitePool,
+    job_id: &str,
+    worker_id: &str,
+    result_reference: Option<&str>,
+) -> Result<bool> {
     let mut tx = pool.begin().await?;
     let result = sqlx::query(
         "UPDATE jobs SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
@@ -182,15 +211,28 @@ pub async fn complete(pool: &SqlitePool, job_id: &str, worker_id: &str, result_r
 }
 
 /// Fail a claimed job. It is re-queued if attempts remain; otherwise dead-lettered.
-pub async fn fail(pool: &SqlitePool, job_id: &str, worker_id: &str, error_code: &str, error_summary: &str) -> Result<bool> {
+pub async fn fail(
+    pool: &SqlitePool,
+    job_id: &str,
+    worker_id: &str,
+    error_code: &str,
+    error_summary: &str,
+) -> Result<bool> {
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
         "SELECT attempt_count, maximum_attempts FROM jobs WHERE id = ? AND status = 'running' AND lease_owner = ?",
     ).bind(job_id).bind(worker_id).fetch_optional(&mut *tx).await?;
-    let Some(row) = row else { tx.commit().await?; return Ok(false); };
+    let Some(row) = row else {
+        tx.commit().await?;
+        return Ok(false);
+    };
     let attempt_count: i64 = row.try_get("attempt_count")?;
     let maximum_attempts: i64 = row.try_get("maximum_attempts")?;
-    let status = if attempt_count >= maximum_attempts { "dead_letter" } else { "queued" };
+    let status = if attempt_count >= maximum_attempts {
+        "dead_letter"
+    } else {
+        "queued"
+    };
     // Exponential retry delay: 2, 4, 8, ... up to five minutes.
     let retry_delay_seconds = 2_i64.pow(attempt_count.min(8) as u32).min(300);
     sqlx::query(
@@ -226,36 +268,71 @@ pub async fn recover_expired_leases(pool: &SqlitePool) -> Result<u64> {
 }
 
 /// Execute a single job. chat_completion invokes the registered inference adapter.
-pub async fn execute_next(pool: &SqlitePool, worker_id: &str, lease_seconds: i64) -> Result<Option<Job>> {
+pub async fn execute_next(
+    pool: &SqlitePool,
+    worker_id: &str,
+    lease_seconds: i64,
+) -> Result<Option<Job>> {
     // The OpenAI-compatible adapter has a 180-second request timeout.
-    anyhow::ensure!(lease_seconds > 180, "worker lease must be longer than the 180-second provider timeout");
-    let Some(job) = claim(pool, worker_id, lease_seconds).await? else { return Ok(None); };
+    anyhow::ensure!(
+        lease_seconds > 180,
+        "worker lease must be longer than the 180-second provider timeout"
+    );
+    let Some(job) = claim(pool, worker_id, lease_seconds).await? else {
+        return Ok(None);
+    };
     let execution: Result<String> = async {
         match job.job_type.as_str() {
             "chat_completion" => {
-                let model = job.payload.get("model").and_then(serde_json::Value::as_str)
+                let model = job
+                    .payload
+                    .get("model")
+                    .and_then(serde_json::Value::as_str)
                     .context("chat_completion payload requires model")?;
-                let value = job.payload.get("messages").cloned()
+                let value = job
+                    .payload
+                    .get("messages")
+                    .cloned()
                     .context("chat_completion payload requires messages")?;
                 let messages: Vec<crate::inference::ChatMessage> = serde_json::from_value(value)
                     .context("chat_completion messages are invalid")?;
-                let content = crate::inference::complete_messages_by_name(pool, model, &messages).await?;
-                anyhow::ensure!(content.len() <= 1_000_000, "completion exceeds the 1 MB job-result limit");
+                let content =
+                    crate::inference::complete_messages_by_name(pool, model, &messages).await?;
+                anyhow::ensure!(
+                    content.len() <= 1_000_000,
+                    "completion exceeds the 1 MB job-result limit"
+                );
                 Ok(serde_json::json!({"model":model,"content":content}).to_string())
             }
             other => anyhow::bail!("unsupported job type {other}"),
         }
-    }.await;
+    }
+    .await;
     match execution {
         Ok(result) => {
-            anyhow::ensure!(complete(pool,&job.id,worker_id,Some(&result)).await?, "job lease was lost before completion");
+            anyhow::ensure!(
+                complete(pool, &job.id, worker_id, Some(&result)).await?,
+                "job lease was lost before completion"
+            );
         }
         Err(error) => {
             tracing::error!(job_id=%job.id,job_type=%job.job_type,error=%error,"job execution failed");
-            anyhow::ensure!(fail(pool,&job.id,worker_id,"job_execution_failed","job execution failed").await?, "job lease was lost before failure");
+            anyhow::ensure!(
+                fail(
+                    pool,
+                    &job.id,
+                    worker_id,
+                    "job_execution_failed",
+                    "job execution failed"
+                )
+                .await?,
+                "job lease was lost before failure"
+            );
         }
     }
-    get(pool,&job.id).await?.context("processed job disappeared")
+    get(pool, &job.id)
+        .await?
+        .context("processed job disappeared")
 }
 
 #[cfg(test)]
@@ -265,8 +342,11 @@ mod tests {
     use sqlx::sqlite::SqlitePoolOptions;
 
     async fn pool() -> SqlitePool {
-        let pool = SqlitePoolOptions::new().max_connections(1)
-            .connect("sqlite::memory:").await.expect("open test database");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("open test database");
         db::migrate(&pool).await.expect("apply schema");
         pool
     }
@@ -275,49 +355,79 @@ mod tests {
     async fn enqueue_is_idempotent_and_claim_completes() {
         let pool = pool().await;
         let payload = serde_json::json!({"prompt":"hello"});
-        let first = enqueue(&pool, "test", &payload, 5, 2, Some("request-1")).await.unwrap();
-        let second = enqueue(&pool, "test", &payload, 5, 2, Some("request-1")).await.unwrap();
+        let first = enqueue(&pool, "test", &payload, 5, 2, Some("request-1"))
+            .await
+            .unwrap();
+        let second = enqueue(&pool, "test", &payload, 5, 2, Some("request-1"))
+            .await
+            .unwrap();
         assert_eq!(first.id, second.id);
         let claimed = claim(&pool, "worker-a", 60).await.unwrap().unwrap();
         assert_eq!(claimed.id, first.id);
         assert_eq!(claimed.attempt_count, 1);
         assert!(claim(&pool, "worker-b", 60).await.unwrap().is_none());
-        assert!(complete(&pool, &first.id, "wrong-worker", None).await.unwrap() == false);
-        assert!(complete(&pool, &first.id, "worker-a", Some("result-1")).await.unwrap());
-        assert_eq!(get(&pool, &first.id).await.unwrap().unwrap().status, "completed");
+        assert!(
+            complete(&pool, &first.id, "wrong-worker", None)
+                .await
+                .unwrap()
+                == false
+        );
+        assert!(complete(&pool, &first.id, "worker-a", Some("result-1"))
+            .await
+            .unwrap());
+        assert_eq!(
+            get(&pool, &first.id).await.unwrap().unwrap().status,
+            "completed"
+        );
     }
 
     #[tokio::test]
     async fn queued_cancellation_and_job_listing_work() {
-        let pool=pool().await;
-        let a=enqueue(&pool,"test",&serde_json::json!({}),2,2,None).await.unwrap();
-        let b=enqueue(&pool,"test",&serde_json::json!({}),0,2,None).await.unwrap();
-        assert_eq!(list(&pool,Some("queued"),10).await.unwrap().len(),2);
-        assert!(cancel(&pool,&a.id).await.unwrap());
-        assert!(!cancel(&pool,&a.id).await.unwrap());
-        assert_eq!(get(&pool,&a.id).await.unwrap().unwrap().status,"cancelled");
-        assert_eq!(get(&pool,&b.id).await.unwrap().unwrap().status,"queued");
-        assert!(list(&pool,Some("bogus"),10).await.is_err());
-        assert!(list(&pool,None,0).await.is_err());
+        let pool = pool().await;
+        let a = enqueue(&pool, "test", &serde_json::json!({}), 2, 2, None)
+            .await
+            .unwrap();
+        let b = enqueue(&pool, "test", &serde_json::json!({}), 0, 2, None)
+            .await
+            .unwrap();
+        assert_eq!(list(&pool, Some("queued"), 10).await.unwrap().len(), 2);
+        assert!(cancel(&pool, &a.id).await.unwrap());
+        assert!(!cancel(&pool, &a.id).await.unwrap());
+        assert_eq!(
+            get(&pool, &a.id).await.unwrap().unwrap().status,
+            "cancelled"
+        );
+        assert_eq!(get(&pool, &b.id).await.unwrap().unwrap().status, "queued");
+        assert!(list(&pool, Some("bogus"), 10).await.is_err());
+        assert!(list(&pool, None, 0).await.is_err());
     }
 
     #[tokio::test]
     async fn unsupported_job_type_becomes_dead_letter() {
-        let pool=pool().await;
-        let job=enqueue(&pool,"unknown",&serde_json::json!({}),0,1,None).await.unwrap();
-        let result=execute_next(&pool,"worker-a",240).await.unwrap().unwrap();
-        assert_eq!(result.id,job.id);
-        assert_eq!(result.status,"dead_letter");
-        assert_eq!(result.error_code.as_deref(),Some("job_execution_failed"));
+        let pool = pool().await;
+        let job = enqueue(&pool, "unknown", &serde_json::json!({}), 0, 1, None)
+            .await
+            .unwrap();
+        let result = execute_next(&pool, "worker-a", 240).await.unwrap().unwrap();
+        assert_eq!(result.id, job.id);
+        assert_eq!(result.status, "dead_letter");
+        assert_eq!(result.error_code.as_deref(), Some("job_execution_failed"));
     }
 
     #[tokio::test]
     async fn failed_jobs_retry_then_dead_letter() {
         let pool = pool().await;
-        let job = enqueue(&pool, "test", &serde_json::json!({}), 0, 1, None).await.unwrap();
+        let job = enqueue(&pool, "test", &serde_json::json!({}), 0, 1, None)
+            .await
+            .unwrap();
         let claimed = claim(&pool, "worker-a", 60).await.unwrap().unwrap();
-        assert!(fail(&pool, &claimed.id, "worker-a", "test_error", "failed").await.unwrap());
-        assert_eq!(get(&pool, &job.id).await.unwrap().unwrap().status, "dead_letter");
+        assert!(fail(&pool, &claimed.id, "worker-a", "test_error", "failed")
+            .await
+            .unwrap());
+        assert_eq!(
+            get(&pool, &job.id).await.unwrap().unwrap().status,
+            "dead_letter"
+        );
         assert!(claim(&pool, "worker-b", 60).await.unwrap().is_none());
     }
 }

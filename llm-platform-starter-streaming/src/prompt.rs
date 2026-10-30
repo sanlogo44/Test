@@ -29,7 +29,11 @@ pub fn optimize(original: &str, mode: &str) -> Result<OptimizedPrompt> {
     let optimized = format!(
         "Role and persona:\nAct as a capable assistant for the task below.\n\nContext and background:\nUse only context explicitly supplied by the user or otherwise available to you.\n\nTask:\n{request}{guidance}"
     );
-    Ok(OptimizedPrompt { original: request.to_owned(), optimized, mode })
+    Ok(OptimizedPrompt {
+        original: request.to_owned(),
+        optimized,
+        mode,
+    })
 }
 
 #[cfg(test)]
