@@ -1,0 +1,33 @@
+name: Starter CI
+
+on:
+  push:
+    branches:
+      - main
+      - work/persistent-job-worker
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: llm-platform-starter-streaming
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run Rust tests
+        run: cargo test
+      - name: Run SQLite schema tests
+        run: python3 tests/schema_test.py
