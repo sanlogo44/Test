@@ -2,7 +2,6 @@ mod api;
 mod cli;
 mod db;
 mod inference;
-mod jobs;
 mod prompt;
 mod jobs;
 mod registry;
