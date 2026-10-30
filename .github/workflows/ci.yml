@@ -31,3 +31,10 @@ jobs:
         run: cargo test
       - name: Run SQLite schema tests
         run: python3 tests/schema_test.py
+      - name: Package updated starter
+        run: zip -qr ../llm-platform-starter-updated.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: llm-platform-starter-updated
+          path: llm-platform-starter-updated.zip
+          if-no-files-found: error
